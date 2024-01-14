@@ -56,18 +56,17 @@ pub fn parse_config_file(
     match config_line(input) {
         Ok(line) => match line.1 {
             ConfigLine::RpcConnect(rpcconnect) => {
-                connection_cred.rpcconnect = Some(rpcconnect.to_string())
+                connection_cred.rpcconnect = Some(rpcconnect.to_string());
             }
             ConfigLine::RpcUser(rpcuser) => connection_cred.rpcuser = Some(rpcuser.to_string()),
             ConfigLine::RpcPassword(rpcpassword) => {
-                connection_cred.rpcpassword = Some(rpcpassword.to_string())
+                connection_cred.rpcpassword = Some(rpcpassword.to_string());
             }
             ConfigLine::MainSection => *should_read = true,
             ConfigLine::TestSection => *should_read = false,
-            ConfigLine::Comment(_) => (),
-            ConfigLine::Other(_) => (),
+            _ => (),
         },
-        Result::Err(err) => panic!("config_line panic: {}", err),
+        Result::Err(err) => panic!("config_line panic: {err}"),
     }
 
     connection_cred.all_set()
@@ -147,7 +146,7 @@ mod tests {
         assert_eq!(
             Ok(("", ConfigLine::RpcConnect("127.0.0.1:8333"))),
             config_line("  rpcconnect=127.0.0.1:8333")
-        )
+        );
     }
 
     #[test]
@@ -155,7 +154,7 @@ mod tests {
         assert_eq!(
             Ok(("", ConfigLine::RpcConnect("127.0.0.1:8333"))),
             config_line("rpcconnect=127.0.0.1:8333")
-        )
+        );
     }
 
     #[test]
@@ -163,7 +162,7 @@ mod tests {
         assert_eq!(
             Ok(("", ConfigLine::RpcUser("myuser"))),
             config_line("rpcuser=myuser")
-        )
+        );
     }
 
     #[test]
@@ -171,16 +170,16 @@ mod tests {
         assert_eq!(
             Ok(("", ConfigLine::RpcPassword("Wjj8**#llZ?"))),
             config_line("rpcpassword=Wjj8**#llZ?")
-        )
+        );
     }
 
     #[test]
     pub fn config_line_main_section() {
-        assert_eq!(Ok(("", ConfigLine::MainSection)), config_line("  [main]"))
+        assert_eq!(Ok(("", ConfigLine::MainSection)), config_line("  [main]"));
     }
 
     #[test]
     pub fn config_line_test_section() {
-        assert_eq!(Ok(("", ConfigLine::TestSection)), config_line("  [test]"))
+        assert_eq!(Ok(("", ConfigLine::TestSection)), config_line("  [test]"));
     }
 }

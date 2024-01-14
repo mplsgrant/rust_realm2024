@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License along with Foobar. If not, see
 // <https://www.gnu.org/licenses/>.
 
+//#![warn(clippy::pedantic)]
+
 use bitcoin::{
     secp256k1::Secp256k1,
     sign_message::{signed_msg_hash, MessageSignature},
@@ -48,25 +50,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let is_signed = signature_str.is_signed_by_address(&secp_ctx, &address, message_hash)?;
     let is_signed_two =
         signature_str.is_signed_by_address(&secp_ctx, &address_two, message_hash)?;
-    println!(
-        "Was {}, signed by address {}? Answer: {}",
-        signature_str, address, is_signed
-    );
-    println!(
-        "Was {}, signed by address {}? Answer: {}",
-        signature_str, address_two, is_signed_two
-    );
+    println!("Was {signature_str}, signed by address {address}? Answer: {is_signed}");
+    println!("Was {signature_str}, signed by address {address_two}? Answer: {is_signed_two}");
 
     // Recover public key and then check that.
     let recovered_pubkey = signature_str.recover_pubkey(&secp_ctx, message_hash)?;
     let recovered_address = Address::p2pkh(&recovered_pubkey, Network::Bitcoin);
-    println!("The recovered address: {}", recovered_address);
+    println!("The recovered address: {recovered_address}");
     let recovered_is_good =
         signature_str.is_signed_by_address(&secp_ctx, &recovered_address, message_hash)?;
 
     println!(
-        "Was {}, signed by address: {}? Answer: {}",
-        signature_str, recovered_address, recovered_is_good
+        "Was {signature_str}, signed by address: {recovered_address}? Answer: {recovered_is_good}"
     );
     // ------------------
 
@@ -80,16 +75,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let message = "1E9YwDtYf9R29ekNAfbV7MvB4LNv7v3fGa";
     let msg_hash = signed_msg_hash(message);
     let is_good_sig = sig.is_signed_by_address(&ctx, &address, msg_hash)?;
-    println!("{} signed the message: {}", address, is_good_sig);
+    println!("{address} signed the message: {is_good_sig}");
 
     let recovered_pubkey = sig.recover_pubkey(&ctx, msg_hash)?;
     let recovered_address = Address::p2pkh(&recovered_pubkey, Network::Bitcoin);
 
     let recovered_is_good = sig.is_signed_by_address(&ctx, &recovered_address, msg_hash)?;
-    println!(
-        "{} signed the message: {}",
-        recovered_address, recovered_is_good
-    );
+    println!("{recovered_address} signed the message: {recovered_is_good}");
 
     let sig = MessageSignature::from_str(
         "HCsBcgB+Wcm8kOGMH8IpNeg0H4gjCrlqwDf/GlSXphZGBYxm0QkKEPhh9DTJRp2IDNUhVr0FhP9qCqo2W0recNM=",
@@ -121,9 +113,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
     }
-    if !connection_cred.all_set() {
-        panic!("Could not read credentials: {:?}", connection_cred)
-    }
+    assert!(
+        connection_cred.all_set(),
+        "Could not read credentials: {connection_cred:?}"
+    );
 
     let _exe_name = args.next().unwrap();
 
@@ -136,10 +129,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .expect("a client");
 
-    let x = rpc.get_block_hash(123456)?;
-    println!("{:?}", x);
+    let x = rpc.get_block_hash(123_456)?;
+    println!("{x:?}");
 
     let y = rpc.verify_message(&address, &signature, message)?;
-    println!("y: {}", y);
+    println!("y: {y}");
     Ok(())
 }
