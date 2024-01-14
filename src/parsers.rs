@@ -14,47 +14,128 @@
 // <https://www.gnu.org/licenses/>.
 
 use nom::{
-    branch::alt,
-    bytes::complete::{is_not, tag, take_till},
-    character::{complete, is_newline},
-    combinator::{complete, recognize},
+    bytes::complete::{tag, take_till},
+    character::complete::multispace0,
+    combinator::opt,
     IResult,
 };
 
-struct ConnectionCred {
-    rpcconnect: String,
-    rpcuser: String,
-    rpcpassword: String,
+#[derive(Default, Debug)]
+pub struct ConnectionCred {
+    pub rpcconnect: Option<String>,
+    pub rpcuser: Option<String>,
+    pub rpcpassword: Option<String>,
+}
+impl ConnectionCred {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn all_set(&self) -> bool {
+        self.rpcconnect.is_some() && self.rpcpassword.is_some() && self.rpcuser.is_some()
+    }
 }
 
-pub fn equal_sign(input: &str) -> IResult<&str, char> {
-    complete::char('=')(input)
+#[derive(Debug, Eq, PartialEq)]
+enum ConfigLine<'a> {
+    RpcConnect(&'a str),
+    RpcUser(&'a str),
+    RpcPassword(&'a str),
+    MainSection,
+    TestSection,
+    Comment(&'a str),
+    Other(&'a str),
 }
 
-pub fn rpcconnect(input: &str) -> IResult<&str, &str> {
-    tag("rpcconnect")(input)
+pub type DoneParsing = bool;
+
+pub fn parse_config_file(
+    input: &str,
+    connection_cred: &mut ConnectionCred,
+    should_read: &mut bool,
+) -> DoneParsing {
+    match config_line(input) {
+        Ok(line) => match line.1 {
+            ConfigLine::RpcConnect(rpcconnect) => {
+                connection_cred.rpcconnect = Some(rpcconnect.to_string())
+            }
+            ConfigLine::RpcUser(rpcuser) => connection_cred.rpcuser = Some(rpcuser.to_string()),
+            ConfigLine::RpcPassword(rpcpassword) => {
+                connection_cred.rpcpassword = Some(rpcpassword.to_string())
+            }
+            ConfigLine::MainSection => *should_read = true,
+            ConfigLine::TestSection => *should_read = false,
+            ConfigLine::Comment(_) => (),
+            ConfigLine::Other(_) => (),
+        },
+        Result::Err(err) => panic!("config_line panic: {}", err),
+    }
+
+    connection_cred.all_set()
 }
 
-pub fn rpcuser(input: &str) -> IResult<&str, &str> {
-    tag("rpcuser")(input)
+fn config_line(input: &str) -> IResult<&str, ConfigLine> {
+    // Consume whitespace from the beginning of input
+    let (input, _prefix_whitespace) = multispace0(input)?;
+
+    // Parse out [main], [test], and comment lines (#)
+    let (input, maybe_main) = main_section(input)?;
+    if let Some(_main) = maybe_main {
+        return Ok(("", ConfigLine::MainSection));
+    }
+    let (input, maybe_test) = test_section(input)?;
+    if let Some(_test) = maybe_test {
+        return Ok(("", ConfigLine::TestSection));
+    }
+    let (input, maybe_comment) = comment(input)?;
+    if let Some(comment) = maybe_comment {
+        return Ok(("", ConfigLine::Comment(comment)));
+    }
+
+    let (input, maybe_rpcuser_line) = rpcuser_line(input)?;
+    if let Some(_rpcuser_line) = maybe_rpcuser_line {
+        let (_, rpcuser) = take_till_space_or_newline(input)?;
+        return Ok(("", ConfigLine::RpcUser(rpcuser)));
+    }
+    let (input, maybe_rpcpassword_line) = rpcpassword_line(input)?;
+    if let Some(_rpcpassword_line) = maybe_rpcpassword_line {
+        let (_, rpcpassword) = take_till_space_or_newline(input)?;
+        return Ok(("", ConfigLine::RpcPassword(rpcpassword)));
+    }
+    let (input, maybe_rpcconnect_line) = rpcconnect_line(input)?;
+    if let Some(_rpcconnect_line) = maybe_rpcconnect_line {
+        let (_, rpcconnect) = take_till_space_or_newline(input)?;
+        return Ok(("", ConfigLine::RpcConnect(rpcconnect)));
+    }
+
+    Ok((input, ConfigLine::Other("")))
 }
 
-pub fn rpcpassword(input: &str) -> IResult<&str, &str> {
-    tag("rpcpassword")(input)
+fn comment(input: &str) -> IResult<&str, Option<&str>> {
+    opt(tag("#"))(input)
 }
 
-pub fn until_space_or_hash(input: &str) -> IResult<&str, &str> {
-    take_till(|c| (c == '\n' || c == '#'))(input)
+fn main_section(input: &str) -> IResult<&str, Option<&str>> {
+    opt(tag("[main]"))(input)
 }
 
-fn not_whitespace(input: &str) -> nom::IResult<&str, &str> {
-    is_not(" \t")(input)
+fn test_section(input: &str) -> IResult<&str, Option<&str>> {
+    opt(tag("[test]"))(input)
 }
 
-// -------
+fn rpcconnect_line(input: &str) -> IResult<&str, Option<&str>> {
+    opt(tag("rpcconnect="))(input)
+}
 
-pub fn hello_parser(i: &str) -> nom::IResult<&str, &str> {
-    nom::bytes::complete::tag("hello")(i)
+fn rpcuser_line(input: &str) -> IResult<&str, Option<&str>> {
+    opt(tag("rpcuser="))(input)
+}
+
+fn rpcpassword_line(input: &str) -> IResult<&str, Option<&str>> {
+    opt(tag("rpcpassword="))(input)
+}
+
+fn take_till_space_or_newline(input: &str) -> IResult<&str, &str> {
+    take_till(|c| (c == '\n' || c == ' ' || c == '\t'))(input)
 }
 
 #[cfg(test)]
@@ -62,7 +143,44 @@ mod tests {
     use super::*;
 
     #[test]
-    pub fn thistest() {
-        assert!(true);
+    pub fn config_line_spaces() {
+        assert_eq!(
+            Ok(("", ConfigLine::RpcConnect("127.0.0.1:8333"))),
+            config_line("  rpcconnect=127.0.0.1:8333")
+        )
+    }
+
+    #[test]
+    pub fn config_line_no_spaces() {
+        assert_eq!(
+            Ok(("", ConfigLine::RpcConnect("127.0.0.1:8333"))),
+            config_line("rpcconnect=127.0.0.1:8333")
+        )
+    }
+
+    #[test]
+    pub fn config_line_rpcuser() {
+        assert_eq!(
+            Ok(("", ConfigLine::RpcUser("myuser"))),
+            config_line("rpcuser=myuser")
+        )
+    }
+
+    #[test]
+    pub fn config_line_rpcpass() {
+        assert_eq!(
+            Ok(("", ConfigLine::RpcPassword("Wjj8**#llZ?"))),
+            config_line("rpcpassword=Wjj8**#llZ?")
+        )
+    }
+
+    #[test]
+    pub fn config_line_main_section() {
+        assert_eq!(Ok(("", ConfigLine::MainSection)), config_line("  [main]"))
+    }
+
+    #[test]
+    pub fn config_line_test_section() {
+        assert_eq!(Ok(("", ConfigLine::TestSection)), config_line("  [test]"))
     }
 }
