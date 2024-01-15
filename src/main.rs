@@ -15,6 +15,7 @@
 
 //#![warn(clippy::pedantic)]
 
+use crate::parsers::{parse_config_file, ConnectionCred};
 use bitcoin::{
     secp256k1::Secp256k1,
     sign_message::{signed_msg_hash, MessageSignature},
@@ -27,8 +28,6 @@ use std::{
     io::{BufRead, BufReader},
     str::FromStr,
 };
-
-use crate::parsers::{parse_config_file, ConnectionCred};
 mod parsers;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
