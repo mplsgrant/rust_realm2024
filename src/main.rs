@@ -17,12 +17,15 @@
 
 use crate::parsers::{parse_config_file, ConnectionCred};
 use bitcoin::{
+    hashes::sha256d,
     secp256k1::Secp256k1,
     sign_message::{signed_msg_hash, MessageSignature},
-    Address, Network,
+    Address, Network, PublicKey,
 };
 use bitcoincore_rpc::{bitcoin, Auth, Client, RpcApi};
+use clap::{Parser, Subcommand};
 use dirs::home_dir;
+use std::path::PathBuf;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -30,69 +33,42 @@ use std::{
 };
 mod parsers;
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// Optional name to operate on
+    name: Option<String>,
+
+    /// Sets a custom config file
+    #[arg(short, long, value_name = "FILE")]
+    config: Option<PathBuf>,
+
+    /// Turn debugging information on
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    debug: u8,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// does testing things
+    VerifyMessage {
+        address: String,
+        signature: String,
+        message: String,
+    },
+    VerifyMessageRecovery {
+        signature: String,
+        message: String,
+    },
+    GetBlockHash {
+        block: u64,
+    },
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let address: Address = Address::from_str("1E9YwDtYf9R29ekNAfbV7MvB4LNv7v3fGa")
-        .unwrap()
-        .require_network(Network::Bitcoin)
-        .unwrap();
-    let address_two: Address = Address::from_str("1NChfewU45oy7Dgn51HwkBFSixaTnyakfj")
-        .unwrap()
-        .require_network(Network::Bitcoin)
-        .unwrap();
-
-    let secp_ctx = Secp256k1::new();
-    let signature_str = MessageSignature::from_str(
-        "HCsBcgB+Wcm8kOGMH8IpNeg0H4gjCrlqwDf/GlSXphZGBYxm0QkKEPhh9DTJRp2IDNUhVr0FhP9qCqo2W0recNM=",
-    )?;
-    let message_hash = signed_msg_hash("1E9YwDtYf9R29ekNAfbV7MvB4LNv7v3fGa");
-
-    let is_signed = signature_str.is_signed_by_address(&secp_ctx, &address, message_hash)?;
-    let is_signed_two =
-        signature_str.is_signed_by_address(&secp_ctx, &address_two, message_hash)?;
-    println!("Was {signature_str}, signed by address {address}? Answer: {is_signed}");
-    println!("Was {signature_str}, signed by address {address_two}? Answer: {is_signed_two}");
-
-    // Recover public key and then check that.
-    let recovered_pubkey = signature_str.recover_pubkey(&secp_ctx, message_hash)?;
-    let recovered_address = Address::p2pkh(&recovered_pubkey, Network::Bitcoin);
-    println!("The recovered address: {recovered_address}");
-    let recovered_is_good =
-        signature_str.is_signed_by_address(&secp_ctx, &recovered_address, message_hash)?;
-
-    println!(
-        "Was {signature_str}, signed by address: {recovered_address}? Answer: {recovered_is_good}"
-    );
-    // ------------------
-
-    let ctx = Secp256k1::new();
-    let sig = MessageSignature::from_str(
-        "HCsBcgB+Wcm8kOGMH8IpNeg0H4gjCrlqwDf/GlSXphZGBYxm0QkKEPhh9DTJRp2IDNUhVr0FhP9qCqo2W0recNM=",
-    )?;
-    println!("sig: {:?}", sig.signature);
-    let address = Address::from_str("1E9YwDtYf9R29ekNAfbV7MvB4LNv7v3fGa")?
-        .require_network(Network::Bitcoin)?;
-    let message = "1E9YwDtYf9R29ekNAfbV7MvB4LNv7v3fGa";
-    let msg_hash = signed_msg_hash(message);
-    let is_good_sig = sig.is_signed_by_address(&ctx, &address, msg_hash)?;
-    println!("{address} signed the message: {is_good_sig}");
-
-    let recovered_pubkey = sig.recover_pubkey(&ctx, msg_hash)?;
-    let recovered_address = Address::p2pkh(&recovered_pubkey, Network::Bitcoin);
-
-    let recovered_is_good = sig.is_signed_by_address(&ctx, &recovered_address, msg_hash)?;
-    println!("{recovered_address} signed the message: {recovered_is_good}");
-
-    let sig = MessageSignature::from_str(
-        "HCsBcgB+Wcm8kOGMH8IpNeg0H4gjCrlqwDf/GlSXphZGBYxm0QkKEPhh9DTJRp2IDNUhVr0FhP9qCqo2W0recNM=",
-    )?;
-    let signature = sig.signature.to_standard();
-
-    // ----------
-
-    // ----------
-
-    let mut args = std::env::args();
-
     let mut homedir = home_dir().expect("Could not determine user's home directory");
     homedir.push(".bitcoin/bitcoin.conf");
 
@@ -117,8 +93,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Could not read credentials: {connection_cred:?}"
     );
 
-    let _exe_name = args.next().unwrap();
-
     let rpc = Client::new(
         &connection_cred.rpcconnect.expect("a connection"),
         Auth::UserPass(
@@ -128,10 +102,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .expect("a client");
 
-    let x = rpc.get_block_hash(123_456)?;
-    println!("{x:?}");
+    let cli = Cli::parse();
+    if let Some(command) = cli.command {
+        match command {
+            Commands::VerifyMessage {
+                address,
+                signature,
+                message,
+            } => {
+                let is_verified = verify_message_from_string(&address, &signature, &message)?;
+                println!("{is_verified}");
+            }
+            Commands::VerifyMessageRecovery { signature, message } => {
+                let pubkey = verify_message_recover_from_string(&signature, &message)?;
+                let recovered_address = Address::p2pkh(&pubkey, Network::Bitcoin);
+                println!("{recovered_address}");
+            }
+            Commands::GetBlockHash { block } => {
+                let hash = rpc.get_block_hash(block)?;
+                println!("{hash}");
+            }
+        }
+    }
 
-    let y = rpc.verify_message(&address, &signature, message)?;
-    println!("y: {y}");
     Ok(())
+}
+
+fn verify_message_recover_from_string(
+    signature: &str,
+    message: &str,
+) -> Result<PublicKey, Box<dyn std::error::Error>> {
+    let signature = MessageSignature::from_str(signature)?;
+    let msg_hash = signed_msg_hash(message);
+    let secp_ctx = Secp256k1::new();
+    Ok(signature.recover_pubkey(&secp_ctx, msg_hash)?)
+}
+
+fn verify_message_from_string(
+    address: &str,
+    signature: &str,
+    message: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let address: Address = Address::from_str(address)
+        .unwrap()
+        .require_network(Network::Bitcoin)
+        .unwrap();
+    let signature = MessageSignature::from_str(signature)?;
+    let msg_hash = signed_msg_hash(message);
+    verify_message(&address, signature, msg_hash)
+}
+
+fn verify_message(
+    address: &Address,
+    signature: MessageSignature,
+    msg_hash: sha256d::Hash,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let secp_ctx = Secp256k1::new();
+    Ok(signature.is_signed_by_address(&secp_ctx, address, msg_hash)?)
 }
