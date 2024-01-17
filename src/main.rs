@@ -13,19 +13,20 @@
 // You should have received a copy of the GNU General Public License along with Foobar. If not, see
 // <https://www.gnu.org/licenses/>.
 
-//#![warn(clippy::pedantic)]
+#![warn(clippy::pedantic)]
 
 use crate::parsers::{parse_config_file, ConnectionCred};
 use bitcoin::{
     hashes::sha256d,
     secp256k1::Secp256k1,
     sign_message::{signed_msg_hash, MessageSignature},
-    Address, Network, PublicKey,
+    Address, Network, PublicKey, Txid, Witness,
 };
 use bitcoincore_rpc::{bitcoin, Auth, Client, RpcApi};
 use clap::{Parser, Subcommand};
 use dirs::home_dir;
-use std::path::PathBuf;
+use miniscript::{Descriptor, DescriptorPublicKey};
+
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -36,36 +37,28 @@ mod parsers;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Optional name to operate on
-    name: Option<String>,
-
-    /// Sets a custom config file
-    #[arg(short, long, value_name = "FILE")]
-    config: Option<PathBuf>,
-
-    /// Turn debugging information on
-    #[arg(short, long, action = clap::ArgAction::Count)]
-    debug: u8,
-
     #[command(subcommand)]
     command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// does testing things
+    /// Verify a message
     VerifyMessage {
         address: String,
         signature: String,
         message: String,
     },
-    VerifyMessageRecovery {
-        signature: String,
-        message: String,
-    },
-    GetBlockHash {
-        block: u64,
-    },
+    /// Get the address that signed a message
+    VerifyMessageRecovery { signature: String, message: String },
+    /// Get the hash of a block
+    GetBlockHash { height: u64 },
+    /// Get the number of vouts for a block at a given  height
+    GetBlockOuts { height: u64 },
+    /// Derive an address given a descriptor
+    DeriveAddress { descriptor: String },
+    /// Problem 005
+    Do005,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -103,6 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .expect("a client");
 
     let cli = Cli::parse();
+
     if let Some(command) = cli.command {
         match command {
             Commands::VerifyMessage {
@@ -118,14 +112,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let recovered_address = Address::p2pkh(&pubkey, Network::Bitcoin);
                 println!("{recovered_address}");
             }
-            Commands::GetBlockHash { block } => {
-                let hash = rpc.get_block_hash(block)?;
+            Commands::GetBlockHash { height } => {
+                let hash = rpc.get_block_hash(height)?;
                 println!("{hash}");
+            }
+            Commands::GetBlockOuts { height } => {
+                let outs = get_block_outs(height, &rpc)?;
+                println!("{outs}");
+            }
+            Commands::DeriveAddress { descriptor } => {
+                let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&descriptor)?;
+                let index_0 = descriptor.at_derivation_index(0)?;
+                let address = index_0.address(Network::Bitcoin)?;
+                println!("{address}");
+            }
+            Commands::Do005 => {
+                let _ = do_005(&rpc);
             }
         }
     }
 
     Ok(())
+}
+
+fn do_005(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
+    let txid = Txid::from_str("37d966a263350fe747f1c606b159987545844a493dd38d84b070027a895c4517")?;
+    let tx = client.get_raw_transaction_info(&txid, None)?;
+    let x = tx
+        .vin
+        .into_iter()
+        .filter_map(|vin| {
+            vin.txinwitness
+                .as_ref()
+                .map(|txinwitness| Witness::from_slice(txinwitness))
+        })
+        .map(|witness| {
+            let x = witness.nth(1).expect("a value");
+            let mut vals = String::new();
+            for i in x {
+                vals.push_str(&format!("{i:02x}"));
+            }
+            vals
+        })
+        .collect::<Vec<String>>();
+    let s = format!("sh(multi(1,{},{},{},{}))", x[0], x[1], x[2], x[3]);
+    let descriptor = miniscript::Descriptor::<bitcoin::PublicKey>::from_str(&s).unwrap();
+    let address = descriptor.address(Network::Bitcoin)?;
+    println!("{address}");
+    Ok(())
+}
+
+fn get_block_outs(height: u64, client: &Client) -> Result<usize, Box<dyn std::error::Error>> {
+    Ok(client.get_block_stats(height)?.outs)
 }
 
 fn verify_message_recover_from_string(
