@@ -26,6 +26,7 @@ use bitcoincore_rpc::{bitcoin, Auth, Client, RpcApi};
 use clap::{Parser, Subcommand};
 use dirs::home_dir;
 use miniscript::{Descriptor, DescriptorPublicKey};
+use std::fmt::Write;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -178,7 +179,7 @@ fn do_005(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
             let x = witness.nth(1).expect("a value");
             let mut vals = String::new();
             for i in x {
-                vals.push_str(&format!("{i:02x}"));
+                write!(&mut vals, "{i:02x}").expect("tx must have hex values");
             }
             vals
         })
