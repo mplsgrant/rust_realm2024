@@ -107,8 +107,7 @@ dependencies = [
 [[package]]
 name = "bitcoincore-rpc"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8eb70725a621848c83b3809913d5314c0d20ca84877d99dd909504b564edab00"
+source = "git+https://github.com/mplsgrant/rust-bitcoincore-rpc.git?branch=mpls-tweaks#ec5da3f9130aaf1669c99c3368f22b414d5c25e7"
 dependencies = [
  "bitcoincore-rpc-json",
  "jsonrpc",
@@ -120,8 +119,7 @@ dependencies = [
 [[package]]
 name = "bitcoincore-rpc-json"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "856ffbee2e492c23bca715d72ea34aae80d58400f2bda26a82015d6bc2ec3662"
+source = "git+https://github.com/mplsgrant/rust-bitcoincore-rpc.git?branch=mpls-tweaks#ec5da3f9130aaf1669c99c3368f22b414d5c25e7"
 dependencies = [
  "bitcoin",
  "serde",
@@ -406,7 +404,7 @@ dependencies = [
 
 [[package]]
 name = "rust_realm2024"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bitcoin",
  "bitcoincore-rpc",

@@ -1,14 +1,15 @@
 [package]
 name = "rust_realm2024"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 bitcoin = { version =  "0.31.1", features = ['base64', 'secp-recovery', "std"] }
-bitcoincore-rpc-json = "0.18.0"
-bitcoincore-rpc = "0.18.0"
+bitcoincore-rpc-json = { git = "https://github.com/mplsgrant/rust-bitcoincore-rpc.git", branch = "mpls-tweaks" }
+bitcoincore-rpc = { git = "https://github.com/mplsgrant/rust-bitcoincore-rpc.git", branch = "mpls-tweaks"  }
+
 miniscript = "11.0.0"
 
 clap = { version = "4.4.14", features = ["derive"] }

@@ -26,7 +26,6 @@ use bitcoincore_rpc::{bitcoin, Auth, Client, RpcApi};
 use clap::{Parser, Subcommand};
 use dirs::home_dir;
 use miniscript::{Descriptor, DescriptorPublicKey};
-
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -59,6 +58,8 @@ enum Commands {
     DeriveAddress { descriptor: String },
     /// Problem 005
     Do005,
+    /// Problem 006
+    Do006,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -129,9 +130,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Commands::Do005 => {
                 let _ = do_005(&rpc);
             }
+            Commands::Do006 => {
+                let _ = do_006(&rpc);
+            }
         }
     }
 
+    Ok(())
+}
+
+fn do_006(rpc: &Client) -> Result<(), Box<dyn std::error::Error>> {
+    let coinbase_hash = rpc.get_block_hash(256_128)?;
+    let coinbase_txid = rpc.get_block_info(&coinbase_hash)?.tx[0];
+    let block_hash = rpc.get_block_hash(257_343)?;
+    let block = rpc.get_block_txs(&block_hash)?;
+    block
+        .tx
+        .iter()
+        .map(|tx| {
+            tx.vin
+                .iter()
+                .map(|vin| {
+                    if let Some(txid) = vin.txid {
+                        if txid == coinbase_txid {
+                            println!("{}", tx.txid);
+                        }
+                    }
+                })
+                .for_each(drop);
+        })
+        .for_each(drop);
     Ok(())
 }
 
