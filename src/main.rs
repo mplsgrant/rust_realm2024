@@ -20,7 +20,7 @@ use bitcoin::{
     hashes::sha256d,
     secp256k1::Secp256k1,
     sign_message::{signed_msg_hash, MessageSignature},
-    Address, Network, PublicKey, Txid, Witness,
+    Address, BlockHash, Network, PublicKey, Txid, Witness,
 };
 use bitcoincore_rpc::{bitcoin, Auth, Client, RpcApi};
 use clap::{Parser, Subcommand};
@@ -50,17 +50,27 @@ enum Commands {
         message: String,
     },
     /// Get the address that signed a message
-    VerifyMessageRecovery { signature: String, message: String },
+    VerifyMessageRecovery {
+        signature: String,
+        message: String,
+    },
     /// Get the hash of a block
-    GetBlockHash { height: u64 },
+    GetBlockHash {
+        height: u64,
+    },
     /// Get the number of vouts for a block at a given  height
-    GetBlockOuts { height: u64 },
+    GetBlockOuts {
+        height: u64,
+    },
     /// Derive an address given a descriptor
-    DeriveAddress { descriptor: String },
+    DeriveAddress {
+        descriptor: String,
+    },
     /// Problem 005
     Do005,
     /// Problem 006
     Do006,
+    TestGetBlock,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -134,6 +144,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Commands::Do006 => {
                 let _ = do_006(&rpc);
             }
+            Commands::TestGetBlock => {
+                let hash = BlockHash::from_str(
+                    "0000000000002917ed80650c6174aac8dfc46f5fe36480aaef682ff6cd83c3ca",
+                )
+                .expect("a hash");
+                let block = rpc.get_block(&hash)?;
+
+                for tx in &block.txdata {
+                    println!("txid: {:?}", tx.txid());
+                    for input in &tx.input {
+                        println!("vin: {:?}", input.previous_output.txid);
+                    }
+                }
+            }
         }
     }
 
@@ -142,20 +166,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn do_006(rpc: &Client) -> Result<(), Box<dyn std::error::Error>> {
     let coinbase_hash = rpc.get_block_hash(256_128)?;
-    let coinbase_txid = rpc.get_block_info(&coinbase_hash)?.tx[0];
+    let coinbase_txid = rpc.get_block(&coinbase_hash)?.txdata[0].txid();
     let block_hash = rpc.get_block_hash(257_343)?;
-    let block = rpc.get_block_txs(&block_hash)?;
+    let block = rpc.get_block(&block_hash)?;
     block
-        .tx
+        .txdata
         .iter()
         .map(|tx| {
-            tx.vin
+            tx.input
                 .iter()
-                .map(|vin| {
-                    if let Some(txid) = vin.txid {
-                        if txid == coinbase_txid {
-                            println!("{}", tx.txid);
-                        }
+                .map(|txin| {
+                    let txid = txin.previous_output.txid;
+                    if txid == coinbase_txid {
+                        println!("{}", tx.txid());
                     }
                 })
                 .for_each(drop);
